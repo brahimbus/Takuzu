@@ -30,7 +30,7 @@ public class ApplicationBinairo extends JFrame {
 
         initialiserComposants();
        
-        genererGrilleAleatoire();
+       
     }
 
     private void initialiserComposants() {
@@ -207,21 +207,7 @@ public class ApplicationBinairo extends JFrame {
             JOptionPane.showMessageDialog(this, message.toString(),
                     "Vérification", JOptionPane.INFORMATION_MESSAGE);
 
-            // Vérification de la résolubilité dans un thread séparé
-            new Thread(() -> {
-                EtatBinairo copie = new EtatBinairo(etatCourant);
-                moteurCSP.configurer(true, true, true, false, false, false);
-                EtatBinairo solution = moteurCSP.resoudre(copie);
-
-                SwingUtilities.invokeLater(() -> {
-                    String result = solution != null
-                            ? "✓ La grille est RÉSOLUBLE\n(solution trouvée en " + moteurCSP.getTempsExecution() + "ms)"
-                            : "✗ La grille est NON RÉSOLUBLE\n(aucune solution trouvée)";
-                    JOptionPane.showMessageDialog(this, result,
-                            "Résolubilité",
-                            solution != null ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
-                });
-            }).start();
+            
         });
 
         btnAide.addActionListener(e -> {
@@ -296,13 +282,7 @@ public class ApplicationBinairo extends JFrame {
                         result.append("  • Algorithmes: ").append(algosUtilises).append("\n");
 
                         // Afficher le rapport de comparaison
-                        java.util.List<String> rapport = moteurCSP.getRapportComparaison();
-                        if (rapport != null && !rapport.isEmpty()) {
-                            result.append("\n=== RAPPORT DÉTAILLÉ ===\n");
-                            for (String ligne : rapport) {
-                                result.append("  • ").append(ligne).append("\n");
-                            }
-                        }
+                        
 
                         JOptionPane.showMessageDialog(this, result.toString(),
                                 "Solution Trouvée", JOptionPane.INFORMATION_MESSAGE);
@@ -517,12 +497,7 @@ public class ApplicationBinairo extends JFrame {
             if (solution != null) {
                 etatInitial = new EtatBinairo(etatCourant);
                 mettreAJourGrilleUI();
-                JOptionPane.showMessageDialog(this,
-                        "Grille résoluble générée avec succès!\n\n" +
-                        "Taille: " + tailleGrille + "x" + tailleGrille + "\n" +
-                        "Cases pré-remplies: " + nbCases + "\n" +
-                        "Tentatives: " + (tentatives + 1),
-                        "Génération Réussie", JOptionPane.INFORMATION_MESSAGE);
+                
                 return;
             }
             
