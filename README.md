@@ -14,6 +14,7 @@ Le Binairo se joue sur une grille carrée (6x6, 8x8 ou 10x10) qui doit être rem
 
 ## Structure du Projet
 
+
 ```
 Game/binairo/
 ├── gui/
