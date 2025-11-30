@@ -9,6 +9,7 @@ import java.util.Random;
 
 public class ApplicationBinairo extends JFrame {
     private EtatBinairo etatCourant;
+    private EtatBinairo etatInitial; // Store initial state
     private JButton[][] boutonsGrille;
     private JPanel panneauGrille;
     private MoteurBinairoCSP moteurCSP;
@@ -25,6 +26,7 @@ public class ApplicationBinairo extends JFrame {
 
         moteurCSP = new MoteurBinairoCSP();
         etatCourant = new EtatBinairo(tailleGrille);
+        etatInitial = new EtatBinairo(etatCourant); // Store initial state
 
         initialiserComposants();
        
@@ -44,18 +46,21 @@ public class ApplicationBinairo extends JFrame {
             String s = (String) comboTaille.getSelectedItem();
             tailleGrille = Integer.parseInt(s.split("x")[0]);
             etatCourant = new EtatBinairo(tailleGrille);
+            etatInitial = new EtatBinairo(etatCourant); // Store initial state
             reconstruireGrilleUI();
         });
 
         JButton btnGenerer = new JButton("Générer");
         JButton btnVerifier = new JButton("Vérifier Validité & Résolubilité");
         JButton btnResoudre = new JButton("Résoudre (CSP)");
+        JButton btnReset = new JButton("Reset"); // Add reset button
 
         panneauControles.add(new JLabel("Taille:"));
         panneauControles.add(comboTaille);
         panneauControles.add(btnGenerer);
         panneauControles.add(btnVerifier);
         panneauControles.add(btnResoudre);
+        panneauControles.add(btnReset); // Add reset button to panel
 
         add(panneauControles, BorderLayout.NORTH);
 
@@ -163,6 +168,7 @@ public class ApplicationBinairo extends JFrame {
             if (userSelection == JFileChooser.APPROVE_OPTION) {
                 try {
                     etatCourant = EtatBinairo.charger(fileChooser.getSelectedFile().getAbsolutePath());
+                    etatInitial = new EtatBinairo(etatCourant); // Store initial state when loading
                     tailleGrille = etatCourant.getTaille();
                     reconstruireGrilleUI();
                     JOptionPane.showMessageDialog(this,
@@ -196,8 +202,6 @@ public class ApplicationBinairo extends JFrame {
                 message.append("\n");
             }
 
-            
-
             JOptionPane.showMessageDialog(this, message.toString(),
                     "Vérification", JOptionPane.INFORMATION_MESSAGE);
 
@@ -229,7 +233,6 @@ public class ApplicationBinairo extends JFrame {
         btnRetour.addActionListener(e -> {
             if (etatCourant.annulerCoup()) {
                 mettreAJourGrilleUI();
-                
             } else {
                 JOptionPane.showMessageDialog(this, "Historique vide, impossible d'annuler.",
                         "Annulation Impossible", JOptionPane.WARNING_MESSAGE);
@@ -289,6 +292,27 @@ public class ApplicationBinairo extends JFrame {
                 });
             }).start();
         });
+
+        // Add action listener for reset button
+        btnReset.addActionListener(e -> resetGrille());
+    }
+
+    // Add reset method
+    private void resetGrille() {
+        int response = JOptionPane.showConfirmDialog(this,
+                "Êtes-vous sûr de vouloir réinitialiser la grille à son état initial?",
+                "Confirmation de Reset",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+        
+        if (response == JOptionPane.YES_OPTION) {
+            etatCourant = new EtatBinairo(etatInitial);
+            mettreAJourGrilleUI();
+            JOptionPane.showMessageDialog(this,
+                    "Grille réinitialisée avec succès!",
+                    "Reset Réussi",
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
     }
 
     private void reconstruireGrilleUI() {
@@ -358,8 +382,8 @@ public class ApplicationBinairo extends JFrame {
                 etatCourant.setValeur(r, c, EtatBinairo.VIDE);
             }
         }
+        etatInitial = new EtatBinairo(etatCourant); // Update initial state when generating new grid
         mettreAJourGrilleUI();
-        
     }
 
     public static void main(String[] args) {

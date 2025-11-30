@@ -103,21 +103,7 @@ Ou directement depuis votre IDE en exécutant la classe `ApplicationBinairo`.
 2. Cliquer sur **"Résoudre (CSP)"**
 3. La solution s'affiche avec les statistiques dans une popup
 
-### Configurations Recommandées
 
-**Pour une résolution rapide** :
-- ✅ MVR
-- ✅ Degree
-- ✅ LCV
-
-**Pour grilles difficiles** :
-- ✅ MVR
-- ✅ Degree
-- ✅ LCV
-- ✅ FC
-
-**Pour analyse complète** :
-- ✅ Tous les algorithmes (MVR, Degree, LCV, FC, AC-3)
 
 ## Architecture Technique
 
@@ -138,7 +124,7 @@ Ou directement depuis votre IDE en exécutant la classe `ApplicationBinairo`.
 
 ### Interface (`ApplicationBinairo`)
 - Architecture **Swing** avec `BorderLayout`
-- **Popups** pour tous les messages (pas de console)
+- **Popups** pour tous les messages 
 - **Threading** pour ne pas bloquer l'UI pendant la résolution
 - Mise à jour visuelle de la grille (bleu pour 0, rouge pour 1)
 
