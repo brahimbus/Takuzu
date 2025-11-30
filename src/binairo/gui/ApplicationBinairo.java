@@ -206,7 +206,21 @@ public class ApplicationBinairo extends JFrame {
 
             JOptionPane.showMessageDialog(this, message.toString(),
                     "Vérification", JOptionPane.INFORMATION_MESSAGE);
+            // Vérification de la résolubilité dans un thread séparé
+            new Thread(() -> {
+                EtatBinairo copie = new EtatBinairo(etatCourant);
+                moteurCSP.configurer(true, true, true, false, false, false);
+                EtatBinairo solution = moteurCSP.resoudre(copie);
 
+                SwingUtilities.invokeLater(() -> {
+                    String result = solution != null
+                            ? "✓ La grille est RÉSOLUBLE\n(solution trouvée en " + moteurCSP.getTempsExecution() + "ms)"
+                            : "✗ La grille est NON RÉSOLUBLE\n(aucune solution trouvée)";
+                    JOptionPane.showMessageDialog(this, result,
+                            "Résolubilité",
+                            solution != null ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+                });
+            }).start();
             
         });
 
