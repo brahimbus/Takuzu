@@ -135,7 +135,7 @@ public class EtatBinairo implements Serializable {
     // Règle 2: Autant de 0 que de 1 par ligne et colonne
     private boolean verifierEquilibre() {
         int demiTaille = taille / 2;
-        
+
         for (int i = 0; i < taille; i++) {
             int nb0Ligne = 0, nb1Ligne = 0;
             int nb0Colonne = 0, nb1Colonne = 0;
@@ -206,82 +206,148 @@ public class EtatBinairo implements Serializable {
 
     /**
      * Cherche une suggestion simple (coup forcé).
+     * Améliorations :
+     *  - vérifie les triplets horizontaux et verticaux
+     *  - vérifie les motifs _ x _ (par exemple 0 _ 0 => milieu = 1)
+     *  - tente pour chaque case vide d'assigner 0 puis 1 et retourne
+     *    une valeur forcée si l'autre mène à une contradiction
      */
     public int[] getSuggestion() {
-        // 1. Vérifier les triplets évidents
+        int demiTaille = taille / 2;
+
+        // 1) Triplets horizontaux (existants) et motifs 0 _ 0 ou 1 _ 1
         for (int i = 0; i < taille; i++) {
             for (int j = 0; j < taille - 2; j++) {
                 // Horizontal: 0 0 _ → doit être 1
                 if (grille[i][j] == ZERO && grille[i][j + 1] == ZERO && grille[i][j + 2] == VIDE) {
-                    return new int[]{i, j + 2, UN};
+                    if (isValidAfterSetting(i, j + 2, UN)) return new int[]{i, j + 2, UN};
                 }
                 // Horizontal: 1 1 _ → doit être 0
                 if (grille[i][j] == UN && grille[i][j + 1] == UN && grille[i][j + 2] == VIDE) {
-                    return new int[]{i, j + 2, ZERO};
+                    if (isValidAfterSetting(i, j + 2, ZERO)) return new int[]{i, j + 2, ZERO};
                 }
                 // Horizontal: _ 0 0 → doit être 1
                 if (grille[i][j] == VIDE && grille[i][j + 1] == ZERO && grille[i][j + 2] == ZERO) {
-                    return new int[]{i, j, UN};
+                    if (isValidAfterSetting(i, j, UN)) return new int[]{i, j, UN};
                 }
                 // Horizontal: _ 1 1 → doit être 0
                 if (grille[i][j] == VIDE && grille[i][j + 1] == UN && grille[i][j + 2] == UN) {
-                    return new int[]{i, j, ZERO};
+                    if (isValidAfterSetting(i, j, ZERO)) return new int[]{i, j, ZERO};
+                }
+
+                // Horizontal: pattern 0 _ 0 -> middle must be 1
+                if (grille[i][j] == ZERO && grille[i][j + 1] == VIDE && grille[i][j + 2] == ZERO) {
+                    if (isValidAfterSetting(i, j + 1, UN)) return new int[]{i, j + 1, UN};
+                }
+                if (grille[i][j] == UN && grille[i][j + 1] == VIDE && grille[i][j + 2] == UN) {
+                    if (isValidAfterSetting(i, j + 1, ZERO)) return new int[]{i, j + 1, ZERO};
                 }
             }
         }
 
-        // 2. Vérifier l'équilibre par ligne/colonne
+        // 1b) Triplets verticaux et motifs 0 _ 0 / 1 _ 1 vertical
+        for (int j = 0; j < taille; j++) {
+            for (int i = 0; i < taille - 2; i++) {
+                if (grille[i][j] == ZERO && grille[i + 1][j] == ZERO && grille[i + 2][j] == VIDE) {
+                    if (isValidAfterSetting(i + 2, j, UN)) return new int[]{i + 2, j, UN};
+                }
+                if (grille[i][j] == UN && grille[i + 1][j] == UN && grille[i + 2][j] == VIDE) {
+                    if (isValidAfterSetting(i + 2, j, ZERO)) return new int[]{i + 2, j, ZERO};
+                }
+                if (grille[i][j] == VIDE && grille[i + 1][j] == ZERO && grille[i + 2][j] == ZERO) {
+                    if (isValidAfterSetting(i, j, UN)) return new int[]{i, j, UN};
+                }
+                if (grille[i][j] == VIDE && grille[i + 1][j] == UN && grille[i + 2][j] == UN) {
+                    if (isValidAfterSetting(i, j, ZERO)) return new int[]{i, j, ZERO};
+                }
+
+                // vertical pattern 0 _ 0 -> middle = 1
+                if (grille[i][j] == ZERO && grille[i + 1][j] == VIDE && grille[i + 2][j] == ZERO) {
+                    if (isValidAfterSetting(i + 1, j, UN)) return new int[]{i + 1, j, UN};
+                }
+                if (grille[i][j] == UN && grille[i + 1][j] == VIDE && grille[i + 2][j] == UN) {
+                    if (isValidAfterSetting(i + 1, j, ZERO)) return new int[]{i + 1, j, ZERO};
+                }
+            }
+        }
+
+        // 2) Vérifier l'équilibre par ligne/colonne (cas plus forts):
         for (int i = 0; i < taille; i++) {
             int nb0Ligne = 0, nb1Ligne = 0;
             int nb0Colonne = 0, nb1Colonne = 0;
-            
+
             for (int j = 0; j < taille; j++) {
                 if (grille[i][j] == ZERO) nb0Ligne++;
                 else if (grille[i][j] == UN) nb1Ligne++;
-                
+
                 if (grille[j][i] == ZERO) nb0Colonne++;
                 else if (grille[j][i] == UN) nb1Colonne++;
             }
-            
-            int demiTaille = taille / 2;
-            
+
             // Si une ligne a déjà le maximum de 0, les cases vides doivent être 1
             if (nb0Ligne == demiTaille) {
                 for (int j = 0; j < taille; j++) {
-                    if (grille[i][j] == VIDE) {
+                    if (grille[i][j] == VIDE && isValidAfterSetting(i, j, UN)) {
                         return new int[]{i, j, UN};
                     }
                 }
             }
-            
+
             // Si une ligne a déjà le maximum de 1, les cases vides doivent être 0
             if (nb1Ligne == demiTaille) {
                 for (int j = 0; j < taille; j++) {
-                    if (grille[i][j] == VIDE) {
+                    if (grille[i][j] == VIDE && isValidAfterSetting(i, j, ZERO)) {
                         return new int[]{i, j, ZERO};
                     }
                 }
             }
-            
+
             // Même chose pour les colonnes
             if (nb0Colonne == demiTaille) {
                 for (int j = 0; j < taille; j++) {
-                    if (grille[j][i] == VIDE) {
+                    if (grille[j][i] == VIDE && isValidAfterSetting(j, i, UN)) {
                         return new int[]{j, i, UN};
                     }
                 }
             }
-            
+
             if (nb1Colonne == demiTaille) {
                 for (int j = 0; j < taille; j++) {
-                    if (grille[j][i] == VIDE) {
+                    if (grille[j][i] == VIDE && isValidAfterSetting(j, i, ZERO)) {
                         return new int[]{j, i, ZERO};
                     }
                 }
             }
         }
 
+        // 3) Tentative simple (mini-CSP sur 1 variable) : tester chaque case vide
+        //    si une valeur mène immédiatement à une contradiction, l'autre est forcée
+        for (int i = 0; i < taille; i++) {
+            for (int j = 0; j < taille; j++) {
+                if (grille[i][j] == VIDE) {
+                    boolean zeroOk = isValidAfterSetting(i, j, ZERO);
+                    boolean unOk = isValidAfterSetting(i, j, UN);
+
+                    if (zeroOk && !unOk) return new int[]{i, j, ZERO};
+                    if (!zeroOk && unOk) return new int[]{i, j, UN};
+                }
+            }
+        }
+
+        // 4) Pas de suggestion simple trouvée
         return null;
+    }
+
+    /**
+     * Teste si l'assignation (i,j)=valeur est compatible avec les règles
+     * sans enregistrer le coup dans l'historique.
+     */
+    private boolean isValidAfterSetting(int i, int j, int valeur) {
+        int ancienne = grille[i][j];
+        grille[i][j] = valeur;
+        boolean ok = estValide();
+        grille[i][j] = ancienne;
+        return ok;
     }
 
     /**
@@ -317,7 +383,7 @@ public class EtatBinairo implements Serializable {
             for (int j = 0; j < taille; j++) {
                 if (grille[i][j] == ZERO) nb0Ligne++;
                 else if (grille[i][j] == UN) nb1Ligne++;
-                
+
                 if (grille[j][i] == ZERO) nb0Colonne++;
                 else if (grille[j][i] == UN) nb1Colonne++;
             }
