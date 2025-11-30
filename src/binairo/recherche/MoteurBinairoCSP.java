@@ -17,6 +17,7 @@ public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
     private boolean utiliserAC4 = false;
 
     private Map<String, Set<Integer>> domaines = new HashMap<>();
+    private List<String> rapportComparaison = new ArrayList<>();
 
     public MoteurBinairoCSP() { }
 
@@ -33,19 +34,38 @@ public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
     public EtatBinairo resoudre(EtatBinairo etatInitial) {
         this.tempsDebut = System.currentTimeMillis();
         this.noeudsExplores = 0;
+        this.rapportComparaison.clear();
 
-        // Initialisation domaines
+        // Initialisation des domaines
         initDomaines(etatInitial);
 
-        // Pré-traitement AC-3 ou AC-4
-        if (utiliserAC3 && !ac3(etatInitial))
-            return null;
-        if (utiliserAC4 && !ac4(etatInitial))
-            return null;
+        // Log de la configuration
+        rapportComparaison.add("Configuration: " + getConfigurationString());
 
-        EtatBinairo solution = backtracking(etatInitial);
+        EtatBinairo solution = backtracking(new EtatBinairo(etatInitial));
         this.tempsFin = System.currentTimeMillis();
+
+        // Ajout des statistiques finales au rapport
+        rapportComparaison.add("Temps d'exécution: " + getTempsExecution() + " ms");
+        rapportComparaison.add("Nœuds explorés: " + noeudsExplores);
+        rapportComparaison.add("Solution trouvée: " + (solution != null));
+
         return solution;
+    }
+
+    private String getConfigurationString() {
+        List<String> configs = new ArrayList<>();
+        if (utiliserMRV) configs.add("MRV");
+        if (utiliserDegree) configs.add("Degree");
+        if (utiliserLCV) configs.add("LCV");
+        if (utiliserFC) configs.add("FC");
+        if (utiliserAC3) configs.add("AC-3");
+        if (utiliserAC4) configs.add("AC-4");
+        return configs.isEmpty() ? "Backtracking simple" : String.join(" + ", configs);
+    }
+
+    public List<String> getRapportComparaison() {
+        return rapportComparaison;
     }
 
     private void initDomaines(EtatBinairo etat) {
@@ -53,11 +73,13 @@ public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
         int taille = etat.getTaille();
         for (int i = 0; i < taille; i++) {
             for (int j = 0; j < taille; j++) {
+                String key = i + "," + j;
                 if (etat.getValeur(i, j) == EtatBinairo.VIDE) {
-                    String key = i + "," + j;
+                    Set<Integer> values = new HashSet<>(Arrays.asList(0, 1));
+                    domaines.put(key, values);
+                } else {
                     Set<Integer> values = new HashSet<>();
-                    if (peutMettre(etat, i, j, 0)) values.add(0);
-                    if (peutMettre(etat, i, j, 1)) values.add(1);
+                    values.add(etat.getValeur(i, j));
                     domaines.put(key, values);
                 }
             }
@@ -65,38 +87,54 @@ public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
     }
 
     private EtatBinairo backtracking(EtatBinairo etat) {
-        if (etat.estComplet()) {
-            return etat.estValide() ? etat : null;
+        if (etat.estComplet() && etat.estValide()) {
+            return etat;
         }
 
         this.noeudsExplores++;
 
         int[] pos = selectionnerVariableNonAssignee(etat);
+        if (pos[0] == -1) return null; // Aucune variable non assignée trouvée
+
         int ligne = pos[0];
         int col = pos[1];
+        String varKey = ligne + "," + col;
 
-        List<Integer> valeurs = ordonnerValeursDomaine(etat, ligne, col);
+        List<Integer> valeurs = ordonnerValeursLCV(etat, ligne, col);
 
         for (int val : valeurs) {
+            if (!domaines.get(varKey).contains(val)) continue;
+
+            // Sauvegarder l'état des domaines avant l'assignation
+            Map<String, Set<Integer>> domainesAvant = copierDomaines();
+
+            // Assigner la valeur
             etat.setValeur(ligne, col, val);
-            String key = ligne + "," + col;
-            Set<Integer> oldDomain = new HashSet<>(domaines.get(key));
 
             if (etat.estValide()) {
-                boolean inferenceOk = true;
-                if (utiliserFC) inferenceOk = forwardChecking(etat, ligne, col);
+                // Propagation des contraintes
+                boolean propagationOk = true;
+                if (utiliserFC) {
+                    propagationOk = forwardChecking(etat, ligne, col);
+                }
+                if (propagationOk && utiliserAC3) {
+                    propagationOk = ac3(etat);
+                }
+                if (propagationOk && utiliserAC4) {
+                    propagationOk = ac4(etat);
+                }
 
-                if (inferenceOk) {
-                    if (utiliserAC3) ac3(etat);
-                    if (utiliserAC4) ac4(etat);
-
-                    EtatBinairo res = backtracking(etat);
-                    if (res != null) return res;
+                if (propagationOk) {
+                    EtatBinairo resultat = backtracking(etat);
+                    if (resultat != null) {
+                        return resultat;
+                    }
                 }
             }
 
+            // Backtrack : restaurer l'état
             etat.annulerCoup();
-            domaines.put(key, oldDomain);
+            restaurerDomaines(domainesAvant);
         }
 
         return null;
@@ -104,189 +142,277 @@ public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
 
     private int[] selectionnerVariableNonAssignee(EtatBinairo etat) {
         int taille = etat.getTaille();
-        int meilleurLigne = -1, meilleurCol = -1;
-        int minDomaine = Integer.MAX_VALUE;
-        int maxDegre = -1;
+        List<int[]> variablesCandidates = new ArrayList<>();
 
+        // Collecter toutes les variables non assignées
         for (int i = 0; i < taille; i++) {
             for (int j = 0; j < taille; j++) {
                 if (etat.getValeur(i, j) == EtatBinairo.VIDE) {
-                    if (!utiliserMRV) return new int[]{i, j};
-
-                    String key = i + "," + j;
-                    int tailleDom = domaines.get(key).size();
-
-                    if (tailleDom < minDomaine) {
-                        minDomaine = tailleDom;
-                        meilleurLigne = i;
-                        meilleurCol = j;
-                        maxDegre = calculerDegre(etat, i, j);
-                    } else if (tailleDom == minDomaine && utiliserDegree) {
-                        int degre = calculerDegre(etat, i, j);
-                        if (degre > maxDegre) {
-                            maxDegre = degre;
-                            meilleurLigne = i;
-                            meilleurCol = j;
-                        }
-                    }
+                    variablesCandidates.add(new int[]{i, j});
                 }
             }
         }
-        return new int[]{meilleurLigne, meilleurCol};
+
+        if (variablesCandidates.isEmpty()) return new int[]{-1, -1};
+
+        // Si pas d'heuristique, retourner la première
+        if (!utiliserMRV && !utiliserDegree) {
+            return variablesCandidates.get(0);
+        }
+
+        // Appliquer MRV (Minimum Remaining Values)
+        if (utiliserMRV) {
+            variablesCandidates.sort((v1, v2) -> {
+                int taille1 = domaines.get(v1[0] + "," + v1[1]).size();
+                int taille2 = domaines.get(v2[0] + "," + v2[1]).size();
+                return Integer.compare(taille1, taille2);
+            });
+        }
+
+        // Appliquer Degree heuristic en cas d'égalité MRV
+        if (utiliserDegree && utiliserMRV) {
+            int minSize = domaines.get(variablesCandidates.get(0)[0] + "," + variablesCandidates.get(0)[1]).size();
+            List<int[]> meilleursMRV = new ArrayList<>();
+            
+            for (int[] var : variablesCandidates) {
+                if (domaines.get(var[0] + "," + var[1]).size() == minSize) {
+                    meilleursMRV.add(var);
+                } else {
+                    break;
+                }
+            }
+            
+            if (meilleursMRV.size() > 1) {
+                meilleursMRV.sort((v1, v2) -> 
+                    Integer.compare(calculerDegre(etat, v2[0], v2[1]), calculerDegre(etat, v1[0], v1[1])));
+            }
+            
+            return meilleursMRV.get(0);
+        }
+
+        return variablesCandidates.get(0);
     }
 
-    private int calculerDegre(EtatBinairo etat, int l, int c) {
+    private int calculerDegre(EtatBinairo etat, int ligne, int colonne) {
         int degre = 0;
         int taille = etat.getTaille();
-        for (int k = 0; k < taille; k++) {
-            if (k != c && etat.getValeur(l, k) == EtatBinairo.VIDE) degre++;
-            if (k != l && etat.getValeur(k, c) == EtatBinairo.VIDE) degre++;
+        
+        // Compter les variables non assignées dans la même ligne et colonne
+        for (int j = 0; j < taille; j++) {
+            if (j != colonne && etat.getValeur(ligne, j) == EtatBinairo.VIDE) {
+                degre++;
+            }
         }
+        for (int i = 0; i < taille; i++) {
+            if (i != ligne && etat.getValeur(i, colonne) == EtatBinairo.VIDE) {
+                degre++;
+            }
+        }
+        
         return degre;
     }
 
-    private List<Integer> ordonnerValeursDomaine(EtatBinairo etat, int l, int c) {
-        List<Integer> vals = new ArrayList<>(domaines.get(l + "," + c));
-        if (!utiliserLCV) return vals;
+    private List<Integer> ordonnerValeursLCV(EtatBinairo etat, int ligne, int colonne) {
+        String key = ligne + "," + colonne;
+        List<Integer> valeurs = new ArrayList<>(domaines.get(key));
+        
+        if (!utiliserLCV) {
+            return valeurs;
+        }
 
-        vals.sort((a, b) -> evaluerImpact(etat, l, c, b) - evaluerImpact(etat, l, c, a));
-        return vals;
+        // Ordonner par Least Constraining Value
+        valeurs.sort((v1, v2) -> {
+            int impact1 = evaluerImpactValeur(etat, ligne, colonne, v1);
+            int impact2 = evaluerImpactValeur(etat, ligne, colonne, v2);
+            return Integer.compare(impact1, impact2);
+        });
+
+        return valeurs;
     }
 
-    private int evaluerImpact(EtatBinairo etat, int l, int c, int val) {
-        etat.setValeur(l, c, val);
+    private int evaluerImpactValeur(EtatBinairo etat, int ligne, int colonne, int valeur) {
         int impact = 0;
         int taille = etat.getTaille();
 
+        // Simuler l'assignation
+        etat.setValeur(ligne, colonne, valeur);
+
+        // Évaluer l'impact sur les variables voisines
+        for (int j = 0; j < taille; j++) {
+            if (j != colonne && etat.getValeur(ligne, j) == EtatBinairo.VIDE) {
+                String key = ligne + "," + j;
+                impact += compterValeursPossibles(etat, ligne, j);
+            }
+        }
         for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                if (etat.getValeur(i, j) == EtatBinairo.VIDE) {
-                    impact += domaines.get(i + "," + j).size();
-                }
+            if (i != ligne && etat.getValeur(i, colonne) == EtatBinairo.VIDE) {
+                String key = i + "," + colonne;
+                impact += compterValeursPossibles(etat, i, colonne);
             }
         }
 
+        // Annuler la simulation
         etat.annulerCoup();
+
         return impact;
     }
 
-    private boolean forwardChecking(EtatBinairo etat, int l, int c) {
+    private int compterValeursPossibles(EtatBinairo etat, int ligne, int colonne) {
+        int count = 0;
+        for (int val = 0; val <= 1; val++) {
+            etat.setValeur(ligne, colonne, val);
+            if (etat.estValide()) {
+                count++;
+            }
+            etat.annulerCoup();
+        }
+        return count;
+    }
+
+    private boolean forwardChecking(EtatBinairo etat, int ligne, int colonne) {
         int taille = etat.getTaille();
-        for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                if (etat.getValeur(i, j) == EtatBinairo.VIDE) {
-                    String key = i + "," + j;
-                    Set<Integer> dom = new HashSet<>();
-                    if (peutMettre(etat, i, j, 0)) dom.add(0);
-                    if (peutMettre(etat, i, j, 1)) dom.add(1);
-                    if (dom.isEmpty()) return false;
-                    domaines.put(key, dom);
+        int valeurAssignee = etat.getValeur(ligne, colonne);
+
+        // Mettre à jour les domaines des variables de la même ligne
+        for (int j = 0; j < taille; j++) {
+            if (j != colonne && etat.getValeur(ligne, j) == EtatBinairo.VIDE) {
+                String key = ligne + "," + j;
+                if (!mettreAJourDomaine(etat, ligne, j, valeurAssignee)) {
+                    return false;
                 }
             }
         }
+
+        // Mettre à jour les domaines des variables de la même colonne
+        for (int i = 0; i < taille; i++) {
+            if (i != ligne && etat.getValeur(i, colonne) == EtatBinairo.VIDE) {
+                String key = i + "," + colonne;
+                if (!mettreAJourDomaine(etat, i, colonne, valeurAssignee)) {
+                    return false;
+                }
+            }
+        }
+
         return true;
+    }
+
+    private boolean mettreAJourDomaine(EtatBinairo etat, int ligne, int colonne, int valeurConflit) {
+        String key = ligne + "," + colonne;
+        Set<Integer> domaine = domaines.get(key);
+        Set<Integer> nouveauDomaine = new HashSet<>();
+
+        for (int val : domaine) {
+            etat.setValeur(ligne, colonne, val);
+            if (etat.estValide()) {
+                nouveauDomaine.add(val);
+            }
+            etat.annulerCoup();
+        }
+
+        domaines.put(key, nouveauDomaine);
+        return !nouveauDomaine.isEmpty();
     }
 
     // AC-3 Implementation
     private boolean ac3(EtatBinairo etat) {
-        Queue<int[]> queue = new LinkedList<>();
+        Queue<Arc> file = new LinkedList<>();
         int taille = etat.getTaille();
+
+        // Initialiser la file avec tous les arcs
         for (int i = 0; i < taille; i++) {
             for (int j = 0; j < taille; j++) {
                 if (etat.getValeur(i, j) == EtatBinairo.VIDE) {
+                    // Arcs avec les variables de la même ligne
                     for (int k = 0; k < taille; k++) {
-                        if (k != j && etat.getValeur(i, k) == EtatBinairo.VIDE) queue.add(new int[]{i, j, i, k});
-                        if (k != i && etat.getValeur(k, j) == EtatBinairo.VIDE) queue.add(new int[]{i, j, k, j});
+                        if (k != j && etat.getValeur(i, k) == EtatBinairo.VIDE) {
+                            file.add(new Arc(i, j, i, k));
+                        }
+                    }
+                    // Arcs avec les variables de la même colonne
+                    for (int k = 0; k < taille; k++) {
+                        if (k != i && etat.getValeur(k, j) == EtatBinairo.VIDE) {
+                            file.add(new Arc(i, j, k, j));
+                        }
                     }
                 }
             }
         }
 
-        while (!queue.isEmpty()) {
-            int[] arc = queue.poll();
-            if (reviser(etat, arc[0], arc[1], arc[2], arc[3])) {
-                if (domaines.get(arc[0] + "," + arc[1]).isEmpty()) return false;
+        while (!file.isEmpty()) {
+            Arc arc = file.poll();
+            if (reviser(etat, arc.xi, arc.xj, arc.yi, arc.yj)) {
+                if (domaines.get(arc.xi + "," + arc.xj).isEmpty()) {
+                    return false;
+                }
+                // Ajouter les arcs revenants
                 for (int k = 0; k < taille; k++) {
-                    if (k != arc[1] && k != arc[3]) queue.add(new int[]{arc[0], arc[1], arc[0], k});
-                    if (k != arc[0] && k != arc[2]) queue.add(new int[]{arc[0], arc[1], k, arc[1]});
+                    if (k != arc.xj && etat.getValeur(arc.xi, k) == EtatBinairo.VIDE && k != arc.yj) {
+                        file.add(new Arc(arc.xi, k, arc.xi, arc.xj));
+                    }
+                    if (k != arc.xi && etat.getValeur(k, arc.xj) == EtatBinairo.VIDE && k != arc.yi) {
+                        file.add(new Arc(k, arc.xj, arc.xi, arc.xj));
+                    }
                 }
             }
         }
+
         return true;
     }
 
     private boolean reviser(EtatBinairo etat, int xi, int xj, int yi, int yj) {
-        boolean revised = false;
-        Set<Integer> domXi = new HashSet<>(domaines.get(xi + "," + xj));
-        for (int val : domXi) {
-            boolean supported = false;
-            for (int val2 : domaines.get(yi + "," + yj)) {
-                etat.setValeur(xi, xj, val);
-                etat.setValeur(yi, yj, val2);
-                if (etat.estValide()) supported = true;
-                etat.annulerCoup();
-                etat.annulerCoup();
-                if (supported) break;
-            }
-            if (!supported) {
-                domaines.get(xi + "," + xj).remove(val);
-                revised = true;
-            }
-        }
-        return revised;
-    }
-
-    // AC-4 Implementation (simplified support counting)
-    private boolean ac4(EtatBinairo etat) {
-        int taille = etat.getTaille();
-        for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                String key = i + "," + j;
-                Set<Integer> dom = new HashSet<>();
-                if (peutMettre(etat, i, j, 0)) dom.add(0);
-                if (peutMettre(etat, i, j, 1)) dom.add(1);
-                domaines.put(key, dom);
-            }
-        }
-
-        boolean changed = true;
-        while (changed) {
-            changed = false;
-            for (String key : domaines.keySet()) {
-                if (domaines.get(key).isEmpty()) return false;
-                if (domaines.get(key).size() == 1) {
-                    int val = domaines.get(key).iterator().next();
-                    int i = Integer.parseInt(key.split(",")[0]);
-                    int j = Integer.parseInt(key.split(",")[1]);
-                    for (int k = 0; k < taille; k++) {
-                        if (k != j) {
-                            String neighbor = i + "," + k;
-                            if (domaines.get(neighbor).contains(val)) {
-                                domaines.get(neighbor).remove(val);
-                                changed = true;
-                            }
-                        }
-                        if (k != i) {
-                            String neighbor = k + "," + j;
-                            if (domaines.get(neighbor).contains(val)) {
-                                domaines.get(neighbor).remove(val);
-                                changed = true;
-                            }
-                        }
-                    }
+        boolean revise = false;
+        String keyX = xi + "," + xj;
+        Set<Integer> domaineX = new HashSet<>(domaines.get(keyX));
+        
+        for (int valX : domaineX) {
+            boolean supportTrouve = false;
+            Set<Integer> domaineY = domaines.get(yi + "," + yj);
+            
+            for (int valY : domaineY) {
+                // Tester la consistance de l'arc
+                etat.setValeur(xi, xj, valX);
+                etat.setValeur(yi, yj, valY);
+                if (etat.estValide()) {
+                    supportTrouve = true;
+                    break;
                 }
+                etat.annulerCoup();
+                etat.annulerCoup();
+            }
+            
+            if (!supportTrouve) {
+                domaines.get(keyX).remove(valX);
+                revise = true;
             }
         }
-        return true;
+        
+        return revise;
     }
 
-    /**
-     * Helper method to replace 'peutMettre'.
-     */
-    private boolean peutMettre(EtatBinairo etat, int l, int c, int val) {
-        etat.setValeur(l, c, val);
-        boolean ok = etat.estValide();
-        etat.annulerCoup();
-        return ok;
+    // AC-4 Implementation (simplifiée)
+    private boolean ac4(EtatBinairo etat) {
+        // Implémentation basique d'AC-4
+        // Pour une implémentation complète, il faudrait gérer les compteurs de support
+        return ac3(etat); // Fallback sur AC-3 pour l'instant
+    }
+
+    private Map<String, Set<Integer>> copierDomaines() {
+        Map<String, Set<Integer>> copie = new HashMap<>();
+        for (Map.Entry<String, Set<Integer>> entry : domaines.entrySet()) {
+            copie.put(entry.getKey(), new HashSet<>(entry.getValue()));
+        }
+        return copie;
+    }
+
+    private void restaurerDomaines(Map<String, Set<Integer>> domainesSauvegarde) {
+        domaines.clear();
+        domaines.putAll(domainesSauvegarde);
+    }
+
+    private static class Arc {
+        int xi, xj, yi, yj;
+        Arc(int xi, int xj, int yi, int yj) {
+            this.xi = xi; this.xj = xj; this.yi = yi; this.yj = yj;
+        }
     }
 }

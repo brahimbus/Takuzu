@@ -2,6 +2,8 @@ package binairo.modele;
 
 import java.io.*;
 import java.util.Stack;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Représente l'état de la grille du jeu Binairo.
@@ -63,8 +65,6 @@ public class EtatBinairo implements Serializable {
     }
 
     public Integer getValeur(int i, int j) {
-        // Fix NPE: Si la case est null (ne devrait pas arriver avec VIDE, mais
-        // sécurité), retourner VIDE
         if (grille[i][j] == null)
             return VIDE;
         return grille[i][j];
@@ -75,7 +75,6 @@ public class EtatBinairo implements Serializable {
         if (ancienne == null)
             ancienne = VIDE;
 
-        // Normaliser la valeur entrante
         int valFinale = (valeur == null) ? VIDE : valeur;
 
         grille[i][j] = valFinale;
@@ -84,8 +83,6 @@ public class EtatBinairo implements Serializable {
 
     /**
      * Annule le dernier coup.
-     * 
-     * @return true si un coup a été annulé, false sinon.
      */
     public boolean annulerCoup() {
         if (historique.isEmpty())
@@ -106,77 +103,76 @@ public class EtatBinairo implements Serializable {
     }
 
     public boolean estValide() {
-        return verifierAdjacence() && verifierEquilibre() && (!estComplet() || verifierUnicite());
+        return verifierAdjacence() && verifierEquilibre() && verifierUnicite();
     }
 
     // Règle 1: Pas plus de deux chiffres identiques consécutifs
     private boolean verifierAdjacence() {
+        // Vérification horizontale
         for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                if (grille[i][j] == VIDE)
-                    continue;
-                int val = grille[i][j];
-
-                // Horizontal
-                if (j + 2 < taille) {
-                    if (grille[i][j + 1] != VIDE && grille[i][j + 1] == val &&
-                            grille[i][j + 2] != VIDE && grille[i][j + 2] == val)
+            for (int j = 0; j < taille - 2; j++) {
+                if (grille[i][j] != VIDE && grille[i][j + 1] != VIDE && grille[i][j + 2] != VIDE) {
+                    if (grille[i][j].equals(grille[i][j + 1]) && grille[i][j].equals(grille[i][j + 2])) {
                         return false;
+                    }
                 }
-                // Vertical
-                if (i + 2 < taille) {
-                    if (grille[i + 1][j] != VIDE && grille[i + 1][j] == val &&
-                            grille[i + 2][j] != VIDE && grille[i + 2][j] == val)
+            }
+        }
+
+        // Vérification verticale
+        for (int j = 0; j < taille; j++) {
+            for (int i = 0; i < taille - 2; i++) {
+                if (grille[i][j] != VIDE && grille[i + 1][j] != VIDE && grille[i + 2][j] != VIDE) {
+                    if (grille[i][j].equals(grille[i + 1][j]) && grille[i][j].equals(grille[i + 2][j])) {
                         return false;
+                    }
                 }
             }
         }
         return true;
     }
 
-    // Règle 2: Autant de 0 que de 1
+    // Règle 2: Autant de 0 que de 1 par ligne et colonne
     private boolean verifierEquilibre() {
+        int demiTaille = taille / 2;
+        
         for (int i = 0; i < taille; i++) {
-            int nb0_lig = 0, nb1_lig = 0;
-            int nb0_col = 0, nb1_col = 0;
+            int nb0Ligne = 0, nb1Ligne = 0;
+            int nb0Colonne = 0, nb1Colonne = 0;
 
             for (int j = 0; j < taille; j++) {
-                // Ligne
-                if (grille[i][j] != VIDE) {
-                    if (grille[i][j] == 0)
-                        nb0_lig++;
-                    else
-                        nb1_lig++;
-                }
-                // Colonne
-                if (grille[j][i] != VIDE) {
-                    if (grille[j][i] == 0)
-                        nb0_col++;
-                    else
-                        nb1_col++;
-                }
+                // Compter ligne
+                if (grille[i][j] == ZERO) nb0Ligne++;
+                else if (grille[i][j] == UN) nb1Ligne++;
+
+                // Compter colonne
+                if (grille[j][i] == ZERO) nb0Colonne++;
+                else if (grille[j][i] == UN) nb1Colonne++;
             }
 
-            if (nb0_lig > taille / 2 || nb1_lig > taille / 2)
-                return false;
-            if (nb0_col > taille / 2 || nb1_col > taille / 2)
-                return false;
+            if (nb0Ligne > demiTaille || nb1Ligne > demiTaille) return false;
+            if (nb0Colonne > demiTaille || nb1Colonne > demiTaille) return false;
         }
         return true;
     }
 
     // Règle 3: Unicité des lignes et colonnes
     private boolean verifierUnicite() {
+        // Vérifier l'unicité des lignes
         for (int i = 0; i < taille; i++) {
             for (int k = i + 1; k < taille; k++) {
-                if (lignesIdentiques(i, k))
+                if (lignesIdentiques(i, k)) {
                     return false;
+                }
             }
         }
+
+        // Vérifier l'unicité des colonnes
         for (int j = 0; j < taille; j++) {
             for (int k = j + 1; k < taille; k++) {
-                if (colonnesIdentiques(j, k))
+                if (colonnesIdentiques(j, k)) {
                     return false;
+                }
             }
         }
         return true;
@@ -184,18 +180,192 @@ public class EtatBinairo implements Serializable {
 
     private boolean lignesIdentiques(int l1, int l2) {
         for (int j = 0; j < taille; j++) {
-            if (grille[l1][j] == VIDE || grille[l2][j] == VIDE ||
-                    !grille[l1][j].equals(grille[l2][j]))
+            // Si une case est vide dans l'une des lignes, elles ne sont pas considérées comme identiques
+            if (grille[l1][j] == VIDE || grille[l2][j] == VIDE) {
                 return false;
+            }
+            if (!grille[l1][j].equals(grille[l2][j])) {
+                return false;
+            }
         }
         return true;
     }
 
     private boolean colonnesIdentiques(int c1, int c2) {
         for (int i = 0; i < taille; i++) {
-            if (grille[i][c1] == VIDE || grille[i][c2] == VIDE ||
-                    !grille[i][c1].equals(grille[i][c2]))
+            // Si une case est vide dans l'une des colonnes, elles ne sont pas considérées comme identiques
+            if (grille[i][c1] == VIDE || grille[i][c2] == VIDE) {
                 return false;
+            }
+            if (!grille[i][c1].equals(grille[i][c2])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Cherche une suggestion simple (coup forcé).
+     */
+    public int[] getSuggestion() {
+        // 1. Vérifier les triplets évidents
+        for (int i = 0; i < taille; i++) {
+            for (int j = 0; j < taille - 2; j++) {
+                // Horizontal: 0 0 _ → doit être 1
+                if (grille[i][j] == ZERO && grille[i][j + 1] == ZERO && grille[i][j + 2] == VIDE) {
+                    return new int[]{i, j + 2, UN};
+                }
+                // Horizontal: 1 1 _ → doit être 0
+                if (grille[i][j] == UN && grille[i][j + 1] == UN && grille[i][j + 2] == VIDE) {
+                    return new int[]{i, j + 2, ZERO};
+                }
+                // Horizontal: _ 0 0 → doit être 1
+                if (grille[i][j] == VIDE && grille[i][j + 1] == ZERO && grille[i][j + 2] == ZERO) {
+                    return new int[]{i, j, UN};
+                }
+                // Horizontal: _ 1 1 → doit être 0
+                if (grille[i][j] == VIDE && grille[i][j + 1] == UN && grille[i][j + 2] == UN) {
+                    return new int[]{i, j, ZERO};
+                }
+            }
+        }
+
+        // 2. Vérifier l'équilibre par ligne/colonne
+        for (int i = 0; i < taille; i++) {
+            int nb0Ligne = 0, nb1Ligne = 0;
+            int nb0Colonne = 0, nb1Colonne = 0;
+            
+            for (int j = 0; j < taille; j++) {
+                if (grille[i][j] == ZERO) nb0Ligne++;
+                else if (grille[i][j] == UN) nb1Ligne++;
+                
+                if (grille[j][i] == ZERO) nb0Colonne++;
+                else if (grille[j][i] == UN) nb1Colonne++;
+            }
+            
+            int demiTaille = taille / 2;
+            
+            // Si une ligne a déjà le maximum de 0, les cases vides doivent être 1
+            if (nb0Ligne == demiTaille) {
+                for (int j = 0; j < taille; j++) {
+                    if (grille[i][j] == VIDE) {
+                        return new int[]{i, j, UN};
+                    }
+                }
+            }
+            
+            // Si une ligne a déjà le maximum de 1, les cases vides doivent être 0
+            if (nb1Ligne == demiTaille) {
+                for (int j = 0; j < taille; j++) {
+                    if (grille[i][j] == VIDE) {
+                        return new int[]{i, j, ZERO};
+                    }
+                }
+            }
+            
+            // Même chose pour les colonnes
+            if (nb0Colonne == demiTaille) {
+                for (int j = 0; j < taille; j++) {
+                    if (grille[j][i] == VIDE) {
+                        return new int[]{j, i, UN};
+                    }
+                }
+            }
+            
+            if (nb1Colonne == demiTaille) {
+                for (int j = 0; j < taille; j++) {
+                    if (grille[j][i] == VIDE) {
+                        return new int[]{j, i, ZERO};
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Retourne une liste détaillée des violations de règles.
+     */
+    public List<String> getViolations() {
+        List<String> violations = new ArrayList<>();
+
+        // Vérifier les adjacences
+        for (int i = 0; i < taille; i++) {
+            for (int j = 0; j < taille - 2; j++) {
+                // Horizontal
+                if (grille[i][j] != VIDE && grille[i][j + 1] != VIDE && grille[i][j + 2] != VIDE) {
+                    if (grille[i][j].equals(grille[i][j + 1]) && grille[i][j].equals(grille[i][j + 2])) {
+                        violations.add("Trois " + grille[i][j] + " consécutifs en ligne " + (i+1) + ", colonnes " + (j+1) + "-" + (j+3));
+                    }
+                }
+                // Vertical
+                if (grille[j][i] != VIDE && grille[j + 1][i] != VIDE && grille[j + 2][i] != VIDE) {
+                    if (grille[j][i].equals(grille[j + 1][i]) && grille[j][i].equals(grille[j + 2][i])) {
+                        violations.add("Trois " + grille[j][i] + " consécutifs en colonne " + (i+1) + ", lignes " + (j+1) + "-" + (j+3));
+                    }
+                }
+            }
+        }
+
+        // Vérifier l'équilibre
+        int demiTaille = taille / 2;
+        for (int i = 0; i < taille; i++) {
+            int nb0Ligne = 0, nb1Ligne = 0;
+            int nb0Colonne = 0, nb1Colonne = 0;
+
+            for (int j = 0; j < taille; j++) {
+                if (grille[i][j] == ZERO) nb0Ligne++;
+                else if (grille[i][j] == UN) nb1Ligne++;
+                
+                if (grille[j][i] == ZERO) nb0Colonne++;
+                else if (grille[j][i] == UN) nb1Colonne++;
+            }
+
+            if (nb0Ligne > demiTaille) {
+                violations.add("Trop de 0 en ligne " + (i+1) + " (" + nb0Ligne + "/" + demiTaille + ")");
+            }
+            if (nb1Ligne > demiTaille) {
+                violations.add("Trop de 1 en ligne " + (i+1) + " (" + nb1Ligne + "/" + demiTaille + ")");
+            }
+            if (nb0Colonne > demiTaille) {
+                violations.add("Trop de 0 en colonne " + (i+1) + " (" + nb0Colonne + "/" + demiTaille + ")");
+            }
+            if (nb1Colonne > demiTaille) {
+                violations.add("Trop de 1 en colonne " + (i+1) + " (" + nb1Colonne + "/" + demiTaille + ")");
+            }
+        }
+
+        // Vérifier l'unicité (seulement pour les lignes/colonnes complètes)
+        for (int i = 0; i < taille; i++) {
+            for (int k = i + 1; k < taille; k++) {
+                if (ligneEstComplete(i) && ligneEstComplete(k) && lignesIdentiques(i, k)) {
+                    violations.add("Lignes " + (i+1) + " et " + (k+1) + " identiques");
+                }
+            }
+        }
+
+        for (int j = 0; j < taille; j++) {
+            for (int k = j + 1; k < taille; k++) {
+                if (colonneEstComplete(j) && colonneEstComplete(k) && colonnesIdentiques(j, k)) {
+                    violations.add("Colonnes " + (j+1) + " et " + (k+1) + " identiques");
+                }
+            }
+        }
+
+        return violations;
+    }
+
+    private boolean ligneEstComplete(int ligne) {
+        for (int j = 0; j < taille; j++) {
+            if (grille[ligne][j] == VIDE) return false;
+        }
+        return true;
+    }
+
+    private boolean colonneEstComplete(int colonne) {
+        for (int i = 0; i < taille; i++) {
+            if (grille[i][colonne] == VIDE) return false;
         }
         return true;
     }
@@ -212,131 +382,6 @@ public class EtatBinairo implements Serializable {
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(chemin))) {
             return (EtatBinairo) ois.readObject();
         }
-    }
-
-    /**
-     * Cherche une suggestion simple (coup forcé).
-     * 
-     * @return Un tableau [ligne, col, valeur] ou null si rien d'évident.
-     */
-    public int[] getSuggestion() {
-        // 1. Chercher des triplets potentiels (0 0 -> 1, 1 1 -> 0, 0 . 0 -> 1)
-        for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                if (grille[i][j] == VIDE) {
-                    // Essayer 0
-                    setValeur(i, j, 0);
-                    boolean zeroValide = estValide();
-                    annulerCoup();
-
-                    // Essayer 1
-                    setValeur(i, j, 1);
-                    boolean unValide = estValide();
-                    annulerCoup();
-
-                    if (zeroValide && !unValide)
-                        return new int[] { i, j, 0 };
-                    if (!zeroValide && unValide)
-                        return new int[] { i, j, 1 };
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Retourne une liste détaillée des violations de règles.
-     * 
-     * @return Liste de messages décrivant chaque violation
-     */
-    public java.util.List<String> getViolations() {
-        java.util.List<String> violations = new java.util.ArrayList<>();
-
-        // Vérifier les adjacences
-        for (int i = 0; i < taille; i++) {
-            for (int j = 0; j < taille; j++) {
-                if (grille[i][j] == VIDE)
-                    continue;
-                int val = grille[i][j];
-
-                // Horizontal
-                if (j + 2 < taille) {
-                    if (grille[i][j + 1] != VIDE && grille[i][j + 1] == val &&
-                            grille[i][j + 2] != VIDE && grille[i][j + 2] == val) {
-                        violations.add("Règle d'adjacence violée: Ligne " + (i + 1) + ", colonnes " +
-                                (j + 1) + "-" + (j + 3) + " (trois " + val + " consécutifs)");
-                    }
-                }
-                // Vertical
-                if (i + 2 < taille) {
-                    if (grille[i + 1][j] != VIDE && grille[i + 1][j] == val &&
-                            grille[i + 2][j] != VIDE && grille[i + 2][j] == val) {
-                        violations.add("Règle d'adjacence violée: Colonne " + (j + 1) + ", lignes " +
-                                (i + 1) + "-" + (i + 3) + " (trois " + val + " consécutifs)");
-                    }
-                }
-            }
-        }
-
-        // Vérifier l'équilibre
-        for (int i = 0; i < taille; i++) {
-            int nb0_lig = 0, nb1_lig = 0;
-            int nb0_col = 0, nb1_col = 0;
-
-            for (int j = 0; j < taille; j++) {
-                if (grille[i][j] != VIDE) {
-                    if (grille[i][j] == 0)
-                        nb0_lig++;
-                    else
-                        nb1_lig++;
-                }
-                if (grille[j][i] != VIDE) {
-                    if (grille[j][i] == 0)
-                        nb0_col++;
-                    else
-                        nb1_col++;
-                }
-            }
-
-            if (nb0_lig > taille / 2) {
-                violations.add("Règle d'équilibre violée: Ligne " + (i + 1) + " a trop de 0 (" + nb0_lig + "/"
-                        + (taille / 2) + ")");
-            }
-            if (nb1_lig > taille / 2) {
-                violations.add("Règle d'équilibre violée: Ligne " + (i + 1) + " a trop de 1 (" + nb1_lig + "/"
-                        + (taille / 2) + ")");
-            }
-            if (nb0_col > taille / 2) {
-                violations.add("Règle d'équilibre violée: Colonne " + (i + 1) + " a trop de 0 (" + nb0_col + "/"
-                        + (taille / 2) + ")");
-            }
-            if (nb1_col > taille / 2) {
-                violations.add("Règle d'équilibre violée: Colonne " + (i + 1) + " a trop de 1 (" + nb1_col + "/"
-                        + (taille / 2) + ")");
-            }
-        }
-
-        // Vérifier l'unicité (seulement si la grille est complète)
-        if (estComplet()) {
-            for (int i = 0; i < taille; i++) {
-                for (int k = i + 1; k < taille; k++) {
-                    if (lignesIdentiques(i, k)) {
-                        violations.add(
-                                "Règle d'unicité violée: Lignes " + (i + 1) + " et " + (k + 1) + " sont identiques");
-                    }
-                }
-            }
-            for (int j = 0; j < taille; j++) {
-                for (int k = j + 1; k < taille; k++) {
-                    if (colonnesIdentiques(j, k)) {
-                        violations.add(
-                                "Règle d'unicité violée: Colonnes " + (j + 1) + " et " + (k + 1) + " sont identiques");
-                    }
-                }
-            }
-        }
-
-        return violations;
     }
 
     @Override

@@ -54,13 +54,15 @@ public class ApplicationBinairo extends JFrame {
         JButton btnVerifier = new JButton("Vérifier Validité & Résolubilité");
         JButton btnResoudre = new JButton("Résoudre (CSP)");
         JButton btnReset = new JButton("Reset"); // Add reset button
+        JButton btnComparer = new JButton("Comparer Méthodes"); // New comparison button
 
         panneauControles.add(new JLabel("Taille:"));
         panneauControles.add(comboTaille);
         panneauControles.add(btnGenerer);
         panneauControles.add(btnVerifier);
         panneauControles.add(btnResoudre);
-        panneauControles.add(btnReset); // Add reset button to panel
+        panneauControles.add(btnReset);
+        panneauControles.add(btnComparer);
 
         add(panneauControles, BorderLayout.NORTH);
 
@@ -205,6 +207,7 @@ public class ApplicationBinairo extends JFrame {
             JOptionPane.showMessageDialog(this, message.toString(),
                     "Vérification", JOptionPane.INFORMATION_MESSAGE);
 
+            // Vérification de la résolubilité dans un thread séparé
             new Thread(() -> {
                 EtatBinairo copie = new EtatBinairo(etatCourant);
                 moteurCSP.configurer(true, true, true, false, false, false);
@@ -224,8 +227,21 @@ public class ApplicationBinairo extends JFrame {
         btnAide.addActionListener(e -> {
             int[] suggestion = etatCourant.getSuggestion();
             if (suggestion != null) {
-                int response = JOptionPane.showConfirmDialog(this,
-                        "Aucune suggestion évidente trouvée.\nEssayez l'analyse manuelle.",
+                String message = String.format(
+                    "Suggestion trouvée!\n\nPosition: Ligne %d, Colonne %d\nValeur: %d\n\nVoulez-vous appliquer cette suggestion?",
+                    suggestion[0] + 1, suggestion[1] + 1, suggestion[2]
+                );
+                
+                int response = JOptionPane.showConfirmDialog(this, message,
+                        "Suggestion", JOptionPane.YES_NO_OPTION);
+                
+                if (response == JOptionPane.YES_OPTION) {
+                    etatCourant.setValeur(suggestion[0], suggestion[1], suggestion[2]);
+                    mettreAJourGrilleUI();
+                }
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Aucune suggestion évidente trouvée.\nEssayez l'analyse manuelle ou utilisez la vérification.",
                         "Pas de Suggestion", JOptionPane.INFORMATION_MESSAGE);
             }
         });
@@ -279,6 +295,15 @@ public class ApplicationBinairo extends JFrame {
                         result.append("  • Nœuds: ").append(moteurCSP.getNoeudsExplores()).append("\n");
                         result.append("  • Algorithmes: ").append(algosUtilises).append("\n");
 
+                        // Afficher le rapport de comparaison
+                        java.util.List<String> rapport = moteurCSP.getRapportComparaison();
+                        if (rapport != null && !rapport.isEmpty()) {
+                            result.append("\n=== RAPPORT DÉTAILLÉ ===\n");
+                            for (String ligne : rapport) {
+                                result.append("  • ").append(ligne).append("\n");
+                            }
+                        }
+
                         JOptionPane.showMessageDialog(this, result.toString(),
                                 "Solution Trouvée", JOptionPane.INFORMATION_MESSAGE);
                     } else {
@@ -295,6 +320,9 @@ public class ApplicationBinairo extends JFrame {
 
         // Add action listener for reset button
         btnReset.addActionListener(e -> resetGrille());
+
+        // Add action listener for comparison button
+        btnComparer.addActionListener(e -> comparerMethodes());
     }
 
     // Add reset method
@@ -313,6 +341,74 @@ public class ApplicationBinairo extends JFrame {
                     "Reset Réussi",
                     JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    // New method to compare different CSP methods
+    private void comparerMethodes() {
+        JOptionPane.showMessageDialog(this,
+                "Comparaison des méthodes CSP en cours...\n\n" +
+                "Cette opération peut prendre quelques secondes.",
+                "Comparaison", JOptionPane.INFORMATION_MESSAGE);
+
+        new Thread(() -> {
+            // Configuration des différentes méthodes à comparer
+            Object[][] configurations = {
+                {false, false, false, false, false, false, "Backtracking simple"},
+                {true, false, false, false, false, false, "MRV seulement"},
+                {true, true, false, false, false, false, "MRV + Degree"},
+                {true, true, true, false, false, false, "MRV + Degree + LCV"},
+                {true, true, true, true, false, false, "+ Forward Checking"},
+                {true, true, true, false, true, false, "+ AC-3"},
+                {true, true, true, true, true, false, "Toutes sauf AC-4"},
+                {true, true, true, true, true, true, "Toutes méthodes"}
+            };
+
+            StringBuilder rapport = new StringBuilder();
+            rapport.append("=== COMPARAISON DES MÉTHODES CSP ===\n\n");
+            rapport.append("Grille: ").append(tailleGrille).append("x").append(tailleGrille).append("\n\n");
+
+            for (Object[] config : configurations) {
+                boolean mrv = (boolean) config[0];
+                boolean degree = (boolean) config[1];
+                boolean lcv = (boolean) config[2];
+                boolean fc = (boolean) config[3];
+                boolean ac3 = (boolean) config[4];
+                boolean ac4 = (boolean) config[5];
+                String nom = (String) config[6];
+
+                moteurCSP.configurer(mrv, degree, lcv, fc, ac3, ac4);
+                EtatBinairo copie = new EtatBinairo(etatCourant);
+                EtatBinairo solution = moteurCSP.resoudre(copie);
+
+                rapport.append(String.format("%-25s | ", nom));
+                if (solution != null) {
+                    rapport.append(String.format("✓ %6d ms | %6d nœuds", 
+                        moteurCSP.getTempsExecution(), moteurCSP.getNoeudsExplores()));
+                } else {
+                    rapport.append(String.format("✗ %6d ms | %6d nœuds", 
+                        moteurCSP.getTempsExecution(), moteurCSP.getNoeudsExplores()));
+                }
+                rapport.append("\n");
+            }
+
+            rapport.append("\nLégende:\n");
+            rapport.append("• ✓ : Solution trouvée\n");
+            rapport.append("• ✗ : Aucune solution trouvée\n");
+            rapport.append("• Temps en millisecondes\n");
+            rapport.append("• Nœuds : nombre de nœuds explorés\n");
+
+            final String rapportFinal = rapport.toString();
+            SwingUtilities.invokeLater(() -> {
+                JTextArea textArea = new JTextArea(rapportFinal);
+                textArea.setEditable(false);
+                textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+                JScrollPane scrollPane = new JScrollPane(textArea);
+                scrollPane.setPreferredSize(new Dimension(600, 400));
+                
+                JOptionPane.showMessageDialog(this, scrollPane,
+                        "Rapport de Comparaison", JOptionPane.INFORMATION_MESSAGE);
+            });
+        }).start();
     }
 
     private void reconstruireGrilleUI() {
@@ -359,35 +455,93 @@ public class ApplicationBinairo extends JFrame {
 
     private void mettreAJourBouton(int i, int j) {
         Integer val = etatCourant.getValeur(i, j);
+        JButton bouton = boutonsGrille[i][j];
+        
         if (val == null || val == EtatBinairo.VIDE) {
-            boutonsGrille[i][j].setText("");
-            boutonsGrille[i][j].setBackground(Color.WHITE);
+            bouton.setText("");
+            bouton.setBackground(Color.WHITE);
+            bouton.setForeground(Color.BLACK);
         } else {
-            boutonsGrille[i][j].setText(val.toString());
-            boutonsGrille[i][j].setBackground(val == 0 ? new Color(200, 220, 255) : new Color(255, 200, 200));
+            bouton.setText(val.toString());
+            if (val == 0) {
+                bouton.setBackground(new Color(200, 220, 255)); // Bleu clair pour 0
+                bouton.setForeground(Color.BLUE);
+            } else {
+                bouton.setBackground(new Color(255, 200, 200)); // Rouge clair pour 1
+                bouton.setForeground(Color.RED);
+            }
+        }
+
+        // Marquer les cases initiales (non modifiables) différemment
+        Integer valInitial = etatInitial.getValeur(i, j);
+        if (valInitial != null && valInitial != EtatBinairo.VIDE) {
+            bouton.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 2));
+            bouton.setFont(new Font("Arial", Font.BOLD, 24));
+        } else {
+            bouton.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1));
         }
     }
 
     private void genererGrilleAleatoire() {
-        etatCourant = new EtatBinairo(tailleGrille);
-        Random rand = new Random();
-        int nbCases = tailleGrille * tailleGrille / 4;
+        int maxTentatives = 100;
+        int tentatives = 0;
+        
+        JOptionPane.showMessageDialog(this,
+                "Génération d'une grille résoluble en cours...\nVeuillez patienter.",
+                "Génération", JOptionPane.INFORMATION_MESSAGE);
+        
+        while (tentatives < maxTentatives) {
+            etatCourant = new EtatBinairo(tailleGrille);
+            Random rand = new Random();
+            int nbCases = tailleGrille * tailleGrille / 4;
 
-        for (int k = 0; k < nbCases; k++) {
-            int r = rand.nextInt(tailleGrille);
-            int c = rand.nextInt(tailleGrille);
-            int v = rand.nextInt(2);
-            etatCourant.setValeur(r, c, v);
-            if (!etatCourant.estValide()) {
-                etatCourant.setValeur(r, c, EtatBinairo.VIDE);
+            // Générer une grille valide
+            for (int k = 0; k < nbCases; k++) {
+                int r = rand.nextInt(tailleGrille);
+                int c = rand.nextInt(tailleGrille);
+                int v = rand.nextInt(2);
+                
+                if (etatCourant.getValeur(r, c) == EtatBinairo.VIDE) {
+                    etatCourant.setValeur(r, c, v);
+                    if (!etatCourant.estValide()) {
+                        etatCourant.annulerCoup();
+                    }
+                }
             }
+
+            // Vérifier si la grille est résoluble
+            EtatBinairo copie = new EtatBinairo(etatCourant);
+            moteurCSP.configurer(true, true, true, false, false, false);
+            EtatBinairo solution = moteurCSP.resoudre(copie);
+            
+            if (solution != null) {
+                etatInitial = new EtatBinairo(etatCourant);
+                mettreAJourGrilleUI();
+                JOptionPane.showMessageDialog(this,
+                        "Grille résoluble générée avec succès!\n\n" +
+                        "Taille: " + tailleGrille + "x" + tailleGrille + "\n" +
+                        "Cases pré-remplies: " + nbCases + "\n" +
+                        "Tentatives: " + (tentatives + 1),
+                        "Génération Réussie", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            
+            tentatives++;
         }
-        etatInitial = new EtatBinairo(etatCourant); // Update initial state when generating new grid
+        
+        // Si on n'a pas trouvé de grille résoluble, utiliser celle qu'on a
+        etatInitial = new EtatBinairo(etatCourant);
         mettreAJourGrilleUI();
+        
+        JOptionPane.showMessageDialog(this,
+                "Attention: La grille générée pourrait être difficile à résoudre.\n" +
+                "Aucune grille résoluble n'a été trouvée après " + maxTentatives + " tentatives.",
+                "Génération", JOptionPane.WARNING_MESSAGE);
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
+           
             new ApplicationBinairo().setVisible(true);
         });
     }
