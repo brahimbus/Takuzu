@@ -4,7 +4,7 @@ import binairo.modele.EtatBinairo;
 import java.util.*;
 
 /**
- * Moteur de résolution CSP pour Binairo (Corrigé et Optimisé).
+ * Moteur de résolution CSP pour Binairo.
  */
 public class MoteurBinairoCSP extends MoteurBinairoAbstrait {
 
